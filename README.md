@@ -1,4 +1,13 @@
 ## AI Healthcare Assistant 🩺 ##
+
+## 🚀 Live Demo
+
+The application is deployed live and can be accessed here:  
+🔗 **[AI Healthcare Assistant Live Link](https://dhruv-gupta-pbel-3-0-2.onrender.com)**
+
+> ⏳ **Note on Loading Time:** This project is hosted on Render's free tier. If the application has been inactive for a while, the server will go into spin-down mode. Clicking the link may take **30 to 60 seconds** to initially wake up and load the webpage. Once loaded, the system operates immediately and responds at normal speed.
+
+
 This repository contains my virtual internship project: a personalized medical recommendation system. The goal of this project is to use machine learning to bridge the gap between experiencing symptoms and knowing what steps to take next.
 
 Instead of just predicting a disease, this web app goes a step further by suggesting actionable health advice based on what the user is feeling.
