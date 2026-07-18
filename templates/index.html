@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Health Care Center</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-4bw+/aepP/YC94hEpVNVgiZdgIC5+VKNBQNGCHeKRQN+PtmoHDEXuppvnDJzQIu9" crossorigin="anonymous">
-  
+
     <style>
         .logo {
             width: 50px;
@@ -19,6 +19,66 @@
             height: 50px;
             border: 2px solid black;
             border-radius: 25px;
+        }
+        /* Autocomplete + tag chip styling */
+        .symptom-autocomplete-wrap {
+            position: relative;
+        }
+        .symptom-suggestions {
+            position: absolute;
+            z-index: 1000;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 220px;
+            overflow-y: auto;
+            background: #fff;
+            color: #000;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            display: none;
+        }
+        .symptom-suggestions.show {
+            display: block;
+        }
+        .symptom-suggestions button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 8px 12px;
+            border: none;
+            background: none;
+            cursor: pointer;
+        }
+        .symptom-suggestions button:hover,
+        .symptom-suggestions button.active {
+            background: #268AF3;
+            color: #fff;
+        }
+        .symptom-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        .symptom-chip {
+            background: #268AF3;
+            color: #fff;
+            border-radius: 20px;
+            padding: 4px 10px 4px 12px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .symptom-chip .remove-chip {
+            cursor: pointer;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+        .symptom-chip .remove-chip:hover {
+            opacity: 1;
         }
     </style>
   </head>
@@ -51,12 +111,20 @@
 <!-- main form of page -->
 <h1 class="mt-4 my-4 text-center text-green">Health Care Center</h1>
 <div class="container my-4 mt-4" style="background: black; color: white; border-radius: 15px; padding: 40px;">
-    <form action="/predict" method="post">
-        <div class="form-group">
-            <label for="symptoms">Select Symptoms:</label>
-            <!-- Fixed the stray comma here -->
-            <input type="text" class="form-control" id="symptoms" name="symptoms" placeholder="Type symptoms such as itching, sleeping, aching etc">
+    <form action="/predict" method="post" id="symptomForm">
+        <div class="form-group symptom-autocomplete-wrap">
+            <label for="symptomSearch">Select Symptoms:</label>
+            <input type="text" class="form-control" id="symptomSearch" autocomplete="off"
+                   placeholder="Start typing a symptom, e.g. itching, headache, cough">
+            <div class="symptom-suggestions" id="symptomSuggestions"></div>
         </div>
+
+        <!-- Selected symptom chips -->
+        <div class="symptom-chips" id="symptomChips"></div>
+
+        <!-- Hidden field actually submitted to the server (JSON list of chosen symptoms) -->
+        <input type="hidden" id="symptoms" name="symptoms" value="">
+
         <br>
         <button type="button" id="startSpeechRecognition" class="btn btn-primary" style="margin-left:3px;border:1px solid white; border-radius:20px;">
             Start Speech Recognition
@@ -64,16 +132,19 @@
         <br>
 
         <!-- Display the transcribed text here -->
-        <div name="mysysms" id="transcription" class="mt-2 text-warning"></div>
+        <div id="transcription" class="mt-2 text-warning"></div>
 
-        {% if message %}
-        <p>{{ message }}</p>
-        {% endif %}
         <br>
 
         <button type="submit" class="btn btn-danger btn-lg" style="width: 100%; padding: 14px; margin-bottom: 5px;">Predict</button>
     </form>
 </div>
+
+{% if warning %}
+<div class="container">
+    <div class="alert alert-warning" role="alert">{{ warning }}</div>
+</div>
+{% endif %}
 
 {% if predicted_disease %}
 <!-- Results -->
@@ -99,7 +170,6 @@
                     <h5 class="modal-title" id="diseaseModalLabel">Predicted Disease</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <!-- Removed invalid inline background color -->
                 <div class="modal-body">
                     <p>{{ predicted_disease }}</p>
                 </div>
@@ -134,6 +204,8 @@
                     <ul>
                         {% for i in my_precautions %}
                             <li>{{ i }}</li>
+                        {% else %}
+                            <li>No specific precautions found for this disease.</li>
                         {% endfor %}
                     </ul>
                 </div>
@@ -153,6 +225,8 @@
                     <ul>
                         {% for i in medications %}
                             <li>{{ i }}</li>
+                        {% else %}
+                            <li>No medications found for this disease.</li>
                         {% endfor %}
                     </ul>
                 </div>
@@ -172,6 +246,8 @@
                     <ul>
                         {% for i in workout %}
                             <li>{{ i }}</li>
+                        {% else %}
+                            <li>No workout suggestions found for this disease.</li>
                         {% endfor %}
                     </ul>
                 </div>
@@ -189,8 +265,10 @@
                 </div>
                 <div class="modal-body">
                     <ul>
-                        {% for i in my_diet %}
+                        {% for i in rec_diet %}
                             <li>{{ i }}</li>
+                        {% else %}
+                            <li>No diet suggestions found for this disease.</li>
                         {% endfor %}
                     </ul>
                 </div>
@@ -198,22 +276,182 @@
         </div>
     </div>
 
+    <!-- Error dialog: shows instead of a crash whenever the server sends back a "message" -->
+    <div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header" style="background-color: #B00020; color:white;">
+                    <h5 class="modal-title" id="errorModalLabel">Please check your input</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>{{ message }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+    // ---- Data passed from Flask: the full list of symptoms the model understands ----
+    const VALID_SYMPTOMS = {{ valid_symptoms | tojson }};
+
+    // ---- Elements ----
+    const searchInput = document.getElementById('symptomSearch');
+    const suggestionsBox = document.getElementById('symptomSuggestions');
+    const chipsContainer = document.getElementById('symptomChips');
+    const hiddenSymptomsField = document.getElementById('symptoms');
+    const symptomForm = document.getElementById('symptomForm');
+
+    let selectedSymptoms = [];
+    let activeSuggestionIndex = -1;
+
+    function formatLabel(sym) {
+        // Turn e.g. "high_fever" into "high fever" for display
+        return sym.replace(/_/g, ' ').trim();
+    }
+
+    function renderChips() {
+        chipsContainer.innerHTML = '';
+        selectedSymptoms.forEach((sym, idx) => {
+            const chip = document.createElement('span');
+            chip.className = 'symptom-chip';
+            chip.innerHTML = `${formatLabel(sym)} <span class="remove-chip" data-idx="${idx}">&times;</span>`;
+            chipsContainer.appendChild(chip);
+        });
+        chipsContainer.querySelectorAll('.remove-chip').forEach(el => {
+            el.addEventListener('click', () => {
+                const idx = parseInt(el.getAttribute('data-idx'), 10);
+                selectedSymptoms.splice(idx, 1);
+                renderChips();
+                syncHiddenField();
+            });
+        });
+    }
+
+    function syncHiddenField() {
+        // Matches the JSON shape main.py expects: [{"value": "itching"}, ...]
+        hiddenSymptomsField.value = JSON.stringify(selectedSymptoms.map(v => ({ value: v })));
+    }
+
+    function addSymptom(sym) {
+        if (!sym) return;
+        if (!selectedSymptoms.includes(sym)) {
+            selectedSymptoms.push(sym);
+            renderChips();
+            syncHiddenField();
+        }
+        searchInput.value = '';
+        hideSuggestions();
+    }
+
+    function hideSuggestions() {
+        suggestionsBox.classList.remove('show');
+        suggestionsBox.innerHTML = '';
+        activeSuggestionIndex = -1;
+    }
+
+    function showSuggestions(matches) {
+        suggestionsBox.innerHTML = '';
+        if (matches.length === 0) {
+            hideSuggestions();
+            return;
+        }
+        matches.slice(0, 8).forEach((sym) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = formatLabel(sym);
+            btn.addEventListener('click', () => addSymptom(sym));
+            suggestionsBox.appendChild(btn);
+        });
+        suggestionsBox.classList.add('show');
+    }
+
+    searchInput.addEventListener('input', () => {
+        const query = searchInput.value.trim().toLowerCase().replace(/\s+/g, '_');
+        if (!query) {
+            hideSuggestions();
+            return;
+        }
+        const matches = VALID_SYMPTOMS.filter(sym =>
+            sym.toLowerCase().includes(query) && !selectedSymptoms.includes(sym)
+        );
+        showSuggestions(matches);
+    });
+
+    // Basic keyboard support: arrow keys + enter to pick a suggestion
+    searchInput.addEventListener('keydown', (e) => {
+        const items = suggestionsBox.querySelectorAll('button');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeSuggestionIndex = Math.min(activeSuggestionIndex + 1, items.length - 1);
+            items.forEach((el, i) => el.classList.toggle('active', i === activeSuggestionIndex));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeSuggestionIndex = Math.max(activeSuggestionIndex - 1, 0);
+            items.forEach((el, i) => el.classList.toggle('active', i === activeSuggestionIndex));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeSuggestionIndex >= 0 && items[activeSuggestionIndex]) {
+                items[activeSuggestionIndex].click();
+            }
+        } else if (e.key === 'Escape') {
+            hideSuggestions();
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.symptom-autocomplete-wrap')) {
+            hideSuggestions();
+        }
+    });
+
+    // Prevent submitting with zero symptoms selected (client-side friendly check;
+    // server still validates too, in case JS is disabled or bypassed).
+    symptomForm.addEventListener('submit', (e) => {
+        if (selectedSymptoms.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one symptom from the suggestions before predicting.');
+        }
+    });
+
+    // ---- Speech recognition: transcribe, then try to fuzzy-match spoken words to known symptoms ----
     const startSpeechRecognitionButton = document.getElementById('startSpeechRecognition');
     const transcriptionDiv = document.getElementById('transcription');
-    const symptomsInput = document.getElementById('symptoms');
 
     startSpeechRecognitionButton.addEventListener('click', startSpeechRecognition);
 
     function startSpeechRecognition() {
-        const recognition = new webkitSpeechRecognition(); // Use webkitSpeechRecognition for compatibility
-        recognition.lang = 'en-US'; // Set the language for recognition
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            transcriptionDiv.textContent = 'Speech recognition is not supported in this browser.';
+            return;
+        }
+        const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognitionImpl();
+        recognition.lang = 'en-US';
 
         recognition.onresult = function (event) {
             const result = event.results[0][0].transcript;
-            // FIXED: Actually populate the input box so the model can predict it
-            symptomsInput.value = result; 
-            transcriptionDiv.textContent = "Voice input received: " + result;
+            transcriptionDiv.textContent = 'Voice input received: ' + result;
+
+            // naive matching: check each known symptom's spoken-friendly form against the transcript
+            const lowerResult = result.toLowerCase();
+            let matched = [];
+            VALID_SYMPTOMS.forEach(sym => {
+                const spoken = formatLabel(sym).toLowerCase();
+                if (lowerResult.includes(spoken)) {
+                    matched.push(sym);
+                }
+            });
+
+            if (matched.length > 0) {
+                matched.forEach(addSymptom);
+            } else {
+                transcriptionDiv.textContent += ' — no matching symptoms found, please type or pick from the dropdown.';
+            }
+        };
+
+        recognition.onerror = function () {
+            transcriptionDiv.textContent = 'Could not capture speech. Please try again or type instead.';
         };
 
         recognition.onend = function () {
@@ -222,6 +460,14 @@
 
         recognition.start();
     }
+
+    // ---- Show error dialog automatically if the server sent a message ----
+    {% if message %}
+    document.addEventListener('DOMContentLoaded', () => {
+        const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+        errorModal.show();
+    });
+    {% endif %}
     </script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js" integrity="sha384-HwwvtgBNo3bZJJLYd8oVXjrBZt8cqVSpeBNS5n7C8IVInixGAoxmnlMuBnhbgrkm" crossorigin="anonymous"></script>
